@@ -1,15 +1,17 @@
 """
-Aegis TUI Observer — entry point.
+Aegis TUI Observer — Main Entry Point.
 
-Cross-platform terminal UI for monitoring live GeoHash grid activity
-and alert pings across the Aegis swarm network.
+Starts the Textual Swarm Monitor dashboard which connects to the local
+Edge WebSocket server and visualizes active neighborhood grid cells.
 """
+
+from .app import AegisTuiApp
 
 
 def main() -> None:
-    """Launch the Aegis TUI Observer application."""
-    # TODO: Initialize Textual App with GeoHash grid widget
-    print("🛡️  Aegis TUI Observer — starting...")
+    """Launch the Aegis Swarm Monitor."""
+    app = AegisTuiApp()
+    app.run()
 
 
 if __name__ == "__main__":
