@@ -5,16 +5,21 @@
   "description": "Edge WebSocket router for Aegis GeoHash Pub/Sub — runs on Cloudflare Workers + Durable Objects",
   "main": "src/index.ts",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "dev": "tsx src/index.ts",
+    "start": "tsx src/index.ts",
     "test": "vitest run",
     "lint": "eslint src/"
   },
-  "dependencies": {},
+  "dependencies": {
+    "ws": "^8.16.0",
+    "uuid": "^9.0.1",
+    "@aegis/geo-core": "file:../geo-core"
+  },
   "devDependencies": {
-    "wrangler": "^3.0.0",
+    "typescript": "^5.4.0",
     "vitest": "^1.0.0",
-    "@cloudflare/workers-types": "^4.0.0",
-    "typescript": "^5.4.0"
+    "@types/ws": "^8.5.10",
+    "@types/uuid": "^9.0.8",
+    "tsx": "^4.7.1"
   }
 }
