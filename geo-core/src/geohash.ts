@@ -17,7 +17,7 @@
  *   8     | ≤38.2 m     | ×19.1 m
  */
 
-import type { GeoHashString } from './types';
+import type { GeoHashString, GeoHashSubscribePayload, SessionId } from './types';
 
 // ─── Constants ──────────────────────────────────────────────────────
 
@@ -105,6 +105,66 @@ export function encodeGeoHash(
   return hash;
 }
 
+// ─── GeoHash Decoding ────────────────────────────────────────────────
+
+/**
+ * Bounding box for a GeoHash cell.
+ */
+export interface GeoHashBounds {
+  readonly minLat: number;
+  readonly maxLat: number;
+  readonly minLng: number;
+  readonly maxLng: number;
+}
+
+/**
+ * Decode a GeoHash string back into its geographic bounding box.
+ *
+ * @param geohash - The GeoHash string to decode.
+ * @returns The bounding box of the GeoHash cell.
+ */
+export function decodeGeoHash(geohash: GeoHashString): GeoHashBounds {
+  if (!geohash) {
+    throw new Error('GeoHash string cannot be empty');
+  }
+
+  let latMin = -90;
+  let latMax = 90;
+  let lngMin = -180;
+  let lngMax = 180;
+  let isLng = true;
+
+  for (let i = 0; i < geohash.length; i++) {
+    const char = geohash[i];
+    const idx = BASE32.indexOf(char);
+    if (idx === -1) {
+      throw new Error(`Invalid character '${char}' at index ${i} in GeoHash: ${geohash}`);
+    }
+
+    for (let bit = 4; bit >= 0; bit--) {
+      const bitValue = (idx >> bit) & 1;
+      if (isLng) {
+        const mid = (lngMin + lngMax) / 2;
+        if (bitValue === 1) {
+          lngMin = mid;
+        } else {
+          lngMax = mid;
+        }
+      } else {
+        const mid = (latMin + latMax) / 2;
+        if (bitValue === 1) {
+          latMin = mid;
+        } else {
+          latMax = mid;
+        }
+      }
+      isLng = !isLng;
+    }
+  }
+
+  return { minLat: latMin, maxLat: latMax, minLng: lngMin, maxLng: lngMax };
+}
+
 // ─── Neighbor Computation ───────────────────────────────────────────
 
 /**
@@ -112,23 +172,53 @@ export function encodeGeoHash(
  * This is essential for the Aegis 500m-radius alert fan-out — an alert in
  * one cell must also reach subscribers in all adjacent cells.
  *
- * @param geohash - The center GeoHash string.
- * @returns An array of 8 neighboring GeoHash strings.
+ * Handles longitude wrapping (Date Line) and skips invalid latitudes at the poles.
  *
- * @remarks
- * TODO: Implement full neighbor computation using the GeoHash bit-stepping algorithm.
- * Stubbed for scaffolding — returns placeholder values.
+ * @param geohash - The center GeoHash string.
+ * @returns An array of up to 8 neighboring GeoHash strings.
  */
 export function getNeighborGeoHashes(geohash: GeoHashString): GeoHashString[] {
-  // TODO: Implement actual neighbor computation
-  // The algorithm involves:
-  //   1. Decode the geohash back to its bounding box
-  //   2. Step in each of the 8 cardinal/intercardinal directions
-  //   3. Re-encode each stepped coordinate
-  //
-  // For now, return an empty array as a stub.
-  void geohash;
-  return [];
+  const { minLat, maxLat, minLng, maxLng } = decodeGeoHash(geohash);
+  const latHeight = maxLat - minLat;
+  const lngWidth = maxLng - minLng;
+  const latCenter = (minLat + maxLat) / 2;
+  const lngCenter = (minLng + maxLng) / 2;
+
+  const precision = geohash.length;
+
+  const directions = [
+    { dy: 1, dx: 0 },   // North
+    { dy: 1, dx: 1 },   // North-East
+    { dy: 0, dx: 1 },   // East
+    { dy: -1, dx: 1 },  // South-East
+    { dy: -1, dx: 0 },  // South
+    { dy: -1, dx: -1 }, // South-West
+    { dy: 0, dx: -1 },  // West
+    { dy: 1, dx: -1 },  // North-West
+  ];
+
+  const neighbors: string[] = [];
+
+  for (const { dy, dx } of directions) {
+    let lat = latCenter + dy * latHeight;
+    let lng = lngCenter + dx * lngWidth;
+
+    // Check latitude bounds (no wrapping at poles)
+    if (lat > 90 || lat < -90) {
+      continue;
+    }
+
+    // Longitude wrapping (Date Line wrapping)
+    if (lng > 180) {
+      lng -= 360;
+    } else if (lng < -180) {
+      lng += 360;
+    }
+
+    neighbors.push(encodeGeoHash(lat, lng, precision));
+  }
+
+  return neighbors;
 }
 
 // ─── Subscription Cell Set ──────────────────────────────────────────
@@ -139,10 +229,54 @@ export function getNeighborGeoHashes(geohash: GeoHashString): GeoHashString[] {
  *
  * @param lat - Client latitude
  * @param lng - Client longitude
- * @returns Array containing the client's own cell + all 8 neighbors (up to 9 cells).
+ * @param precision - Precision level of the GeoHash cells (default: 6)
+ * @returns Array containing the client's own cell + all valid neighbors (up to 9 cells).
  */
-export function computeSubscriptionCells(lat: number, lng: number): GeoHashString[] {
-  const centerHash = encodeGeoHash(lat, lng);
+export function computeSubscriptionCells(
+  lat: number,
+  lng: number,
+  precision: number = AEGIS_GEOHASH_PRECISION,
+): GeoHashString[] {
+  const centerHash = encodeGeoHash(lat, lng, precision);
   const neighbors = getNeighborGeoHashes(centerHash);
   return [centerHash, ...neighbors];
+}
+
+// ─── Payload Constructors ───────────────────────────────────────────
+
+/**
+ * Create a structured JSON payload for WebSocket GeoHash subscription.
+ *
+ * @param geohashes - List of GeoHash strings to subscribe to.
+ * @param sessionId - Ephemeral session identifier.
+ * @returns Structured GeoHashSubscribePayload object.
+ */
+export function createSubscriptionPayload(
+  geohashes: readonly GeoHashString[],
+  sessionId: SessionId,
+): GeoHashSubscribePayload {
+  return {
+    type: 'SUBSCRIBE',
+    geohashes,
+    sessionId,
+  };
+}
+
+/**
+ * Helper to compute subscription cells and build the WebSocket payload directly from coordinates.
+ *
+ * @param lat - Client latitude
+ * @param lng - Client longitude
+ * @param sessionId - Ephemeral session identifier
+ * @param precision - Precision level of the GeoHash cells (default: 6)
+ * @returns Structured GeoHashSubscribePayload object.
+ */
+export function createSubscriptionPayloadFromCoords(
+  lat: number,
+  lng: number,
+  sessionId: SessionId,
+  precision: number = AEGIS_GEOHASH_PRECISION,
+): GeoHashSubscribePayload {
+  const geohashes = computeSubscriptionCells(lat, lng, precision);
+  return createSubscriptionPayload(geohashes, sessionId);
 }
