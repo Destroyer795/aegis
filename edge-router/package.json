@@ -1,0 +1,20 @@
+{
+  "name": "@aegis/edge-router",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Edge WebSocket router for Aegis GeoHash Pub/Sub — runs on Cloudflare Workers + Durable Objects",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "lint": "eslint src/"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "wrangler": "^3.0.0",
+    "vitest": "^1.0.0",
+    "@cloudflare/workers-types": "^4.0.0",
+    "typescript": "^5.4.0"
+  }
+}

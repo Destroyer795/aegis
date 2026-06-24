@@ -1,0 +1,4 @@
+# Aegis TUI Observer — Python dependencies
+textual>=0.70.0
+rich>=13.7.0
+websockets>=12.0
