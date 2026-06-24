@@ -1,0 +1,83 @@
+name: Edge Router — Test & Lint
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'edge-router/**'
+      - 'geo-core/**'
+      - '.github/workflows/edge-router-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'edge-router/**'
+      - 'geo-core/**'
+
+concurrency:
+  group: edge-router-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test WebSocket Router
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      matrix:
+        node-version: [20, 22]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: edge-router/package-lock.json
+
+      - name: Install geo-core dependencies
+        working-directory: geo-core
+        run: npm ci
+
+      - name: Build geo-core
+        working-directory: geo-core
+        run: npm run build
+
+      - name: Install edge-router dependencies
+        working-directory: edge-router
+        run: npm ci
+
+      - name: Lint
+        working-directory: edge-router
+        run: npm run lint
+
+      - name: Run tests
+        working-directory: edge-router
+        run: npm test
+
+  typecheck:
+    name: TypeScript Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: edge-router/package-lock.json
+
+      - name: Install dependencies
+        working-directory: edge-router
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: edge-router
+        run: npx tsc --noEmit
