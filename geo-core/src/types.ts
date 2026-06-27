@@ -135,6 +135,38 @@ export interface EncryptedAlertRelayPayload {
   readonly relayedTo: readonly GeoHashString[];
 }
 
+// ─── Resolve Incident Payloads ──────────────────────────────────────
+
+/**
+ * Sent by the original alerter to signal that the incident has been resolved.
+ * Contains an encrypted confirmation message. The edge router treats this
+ * identically to an ALERT — it fans out to all GeoHash cell subscribers.
+ */
+export interface ResolvePayload {
+  readonly type: 'RESOLVE';
+  /** The GeoHash cell this resolve applies to. */
+  readonly geohash: GeoHashString;
+  /** AES-GCM encrypted confirmation message (hex-encoded). */
+  readonly ciphertext: string;
+  /** AES-GCM initialization vector (hex-encoded). */
+  readonly iv: string;
+  /** ISO 8601 timestamp of resolution. */
+  readonly timestamp: string;
+  /** Session ID of the peer resolving the incident (must match original alerter). */
+  readonly originSessionId: SessionId;
+}
+
+/**
+ * Server-side relay of a RESOLVE message to all GeoHash cell subscribers.
+ */
+export interface ResolveRelayPayload {
+  readonly type: 'RESOLVE_RELAY';
+  /** The original resolve payload. */
+  readonly resolve: ResolvePayload;
+  /** All GeoHash cells this resolve was relayed to. */
+  readonly relayedTo: readonly GeoHashString[];
+}
+
 // ─── Aggregate Message Union ────────────────────────────────────────
 
 /** All possible messages flowing through the Aegis edge router. */
@@ -145,6 +177,8 @@ export type AegisMessage =
   | AlertRelayPayload
   | EncryptedAlertBroadcastPayload
   | EncryptedAlertRelayPayload
+  | ResolvePayload
+  | ResolveRelayPayload
   | WebRTCSignalPayload;
 
 // ─── Observability (TUI) ───────────────────────────────────────────

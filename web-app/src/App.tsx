@@ -8,12 +8,15 @@ import {
   Lock,
   Compass,
   Send,
+  CheckCircle,
 } from 'lucide-react';
 
 export default function App() {
   const [alertMessage, setAlertMessage] = useState('');
   const [severity, setSeverity] = useState<AlertSeverity>(AlertSeverity.CRITICAL);
   const [activeAlert, setActiveAlert] = useState<AlertBroadcastPayload | null>(null);
+  /** Tracks whether THIS client is the originator of the current active alert. */
+  const [isSender, setIsSender] = useState(false);
 
   // Hook 1: Geolocation
   const geo = useGeolocation();
@@ -26,6 +29,13 @@ export default function App() {
 
   const handleAlertReceived = useCallback((alert: AlertBroadcastPayload) => {
     setActiveAlert(alert);
+    setIsSender(false); // We are the receiver, not the sender
+  }, []);
+
+  const handleResolveReceived = useCallback((_geohash: string, _originSessionId: string) => {
+    // Auto-dismiss the flashing alert modal when a RESOLVE is received
+    setActiveAlert(null);
+    setIsSender(false);
   }, []);
 
   // Hook 2: Swarm WebSocket Socket
@@ -33,6 +43,7 @@ export default function App() {
     latitude: geo.latitude,
     longitude: geo.longitude,
     onAlertReceived: handleAlertReceived,
+    onResolveReceived: handleResolveReceived,
   });
 
   // Mock Form Lat/Lng inputs state
@@ -45,9 +56,22 @@ export default function App() {
 
     try {
       await socket.broadcastAlert(alertMessage, severity);
+      // Mark this client as the sender so we show "Resolve" instead of "Broadcast"
+      setIsSender(true);
       setAlertMessage('');
     } catch (err: any) {
       alert(err.message || 'Failed to send alert');
+    }
+  };
+
+  const handleResolve = async () => {
+    try {
+      await socket.resolveIncident();
+      // Clear local sender state
+      setActiveAlert(null);
+      setIsSender(false);
+    } catch (err: any) {
+      alert(err.message || 'Failed to resolve incident');
     }
   };
 
@@ -120,41 +144,65 @@ export default function App() {
           {geo.isMocked && <span className="status-geohash" style={{ background: '#f59e0b', color: '#1e293b', border: 'none' }}>MOCK</span>}
         </section>
 
-        {/* Alert Composition Form */}
-        <form className="alert-form" onSubmit={handleBroadcast}>
-          <div className="alert-form-title">Compose Incident Broadcast</div>
-          <textarea
-            className="alert-textarea"
-            placeholder="Describe the micro-emergency (e.g. fallen tree blocking road, missing dog...)"
-            value={alertMessage}
-            onChange={(e) => setAlertMessage(e.target.value)}
-            maxLength={280}
-            required
-          />
-          <div className="alert-select-row">
-            <span className="alert-select-label">Select Severity:</span>
-            <select
-              className="alert-select"
-              value={severity}
-              onChange={(e) => setSeverity(e.target.value as AlertSeverity)}
-            >
-              <option value={AlertSeverity.INFO}>Info</option>
-              <option value={AlertSeverity.WARNING}>Warning</option>
-              <option value={AlertSeverity.CRITICAL}>Critical</option>
-            </select>
-          </div>
+        {/* Alert Composition Form / Resolve Incident Button */}
+        {isSender ? (
+          <section className="alert-form">
+            <div className="alert-form-title" style={{ color: '#22c55e' }}>
+              ✅ Alert Active — Broadcasting to Neighborhood
+            </div>
+            <p style={{ color: '#9ca3af', fontSize: '0.875rem', margin: '0.5rem 0 1rem' }}>
+              Your incident alert is live. When the situation is resolved, press the button below
+              to notify all nearby peers and clear the swarm.
+            </p>
+            <div className="aegis-actions">
+              <button
+                type="button"
+                className="alert-button"
+                style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}
+                onClick={handleResolve}
+                disabled={socket.status !== 'connected'}
+              >
+                <CheckCircle className="alert-icon" />
+                <span>Resolve Incident</span>
+              </button>
+            </div>
+          </section>
+        ) : (
+          <form className="alert-form" onSubmit={handleBroadcast}>
+            <div className="alert-form-title">Compose Incident Broadcast</div>
+            <textarea
+              className="alert-textarea"
+              placeholder="Describe the micro-emergency (e.g. fallen tree blocking road, missing dog...)"
+              value={alertMessage}
+              onChange={(e) => setAlertMessage(e.target.value)}
+              maxLength={280}
+              required
+            />
+            <div className="alert-select-row">
+              <span className="alert-select-label">Select Severity:</span>
+              <select
+                className="alert-select"
+                value={severity}
+                onChange={(e) => setSeverity(e.target.value as AlertSeverity)}
+              >
+                <option value={AlertSeverity.INFO}>Info</option>
+                <option value={AlertSeverity.WARNING}>Warning</option>
+                <option value={AlertSeverity.CRITICAL}>Critical</option>
+              </select>
+            </div>
 
-          <div className="aegis-actions">
-            <button
-              type="submit"
-              className="alert-button"
-              disabled={socket.status !== 'connected' || !currentGeoHash || !alertMessage.trim()}
-            >
-              <Send className="alert-icon" />
-              <span>Broadcast Alert</span>
-            </button>
-          </div>
-        </form>
+            <div className="aegis-actions">
+              <button
+                type="submit"
+                className="alert-button"
+                disabled={socket.status !== 'connected' || !currentGeoHash || !alertMessage.trim()}
+              >
+                <Send className="alert-icon" />
+                <span>Broadcast Alert</span>
+              </button>
+            </div>
+          </form>
+        )}
 
         {/* Mock Location Panel (Demo Tool for Judges) */}
         <section className="mock-panel">

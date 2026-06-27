@@ -169,6 +169,15 @@ class AegisTuiApp(App):
                             )
                             self.flash_cell(geohash)
 
+                        elif payload.get("type") == "RESOLVE_RELAY":
+                            resolve = payload.get("resolve", {})
+                            geohash = resolve.get("geohash")
+                            sender = resolve.get("originSessionId")
+                            self.log_widget.write_line(
+                                f"✅ INCIDENT RESOLVED in {geohash} by peer {sender}"
+                            )
+                            self.clear_cell(geohash)
+
             except (websockets.exceptions.ConnectionClosed, ConnectionRefusedError, OSError) as e:
                 self.log_widget.write_line(f"❌ Connection error: {e}. Reconnecting in 5s...")
                 await asyncio.sleep(5)
@@ -180,6 +189,14 @@ class AegisTuiApp(App):
             cell_widget.add_class("alerting")
             # Set timer to remove alerting highlight after 2.0 seconds
             self.set_timer(2.0, lambda c=cell_widget: c.remove_class("alerting"))
+        except Exception:
+            self.log_widget.write_line(f"⚠️ Cell '{geohash}' is not in the visual grid.")
+
+    def clear_cell(self, geohash: str) -> None:
+        """Immediately remove the alerting state from a resolved cell."""
+        try:
+            cell_widget = self.query_one(f"#cell-{geohash}", Static)
+            cell_widget.remove_class("alerting")
         except Exception:
             self.log_widget.write_line(f"⚠️ Cell '{geohash}' is not in the visual grid.")
 

@@ -9,6 +9,7 @@ import {
 import type {
   AlertBroadcastPayload,
   EncryptedAlertRelayPayload,
+  ResolveRelayPayload,
 } from '@aegis/geo-core';
 
 export type SocketStatus = 'connecting' | 'connected' | 'disconnected';
@@ -25,6 +26,7 @@ export interface UseSwarmSocketProps {
   latitude: number | null;
   longitude: number | null;
   onAlertReceived: (alert: AlertBroadcastPayload) => void;
+  onResolveReceived: (geohash: string, originSessionId: string) => void;
 }
 
 /**
@@ -33,17 +35,23 @@ export interface UseSwarmSocketProps {
  *
  * - Outgoing ALERTs: plaintext message → encryptPayload() → ciphertext+iv sent to server
  * - Incoming ALERT_RELAYs: ciphertext+iv received → decryptPayload() → plaintext alert
+ * - Outgoing RESOLVE: encrypted confirmation → server fans out RESOLVE_RELAY
+ * - Incoming RESOLVE_RELAYs: auto-dismiss active alert for that GeoHash cell
  *
  * The edge-router NEVER sees plaintext alert messages.
  */
-export function useSwarmSocket({ latitude, longitude, onAlertReceived }: UseSwarmSocketProps) {
+export function useSwarmSocket({ latitude, longitude, onAlertReceived, onResolveReceived }: UseSwarmSocketProps) {
   const [status, setStatus] = useState<SocketStatus>('disconnected');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const onAlertReceivedRef = useRef(onAlertReceived);
+  const onResolveReceivedRef = useRef(onResolveReceived);
   useEffect(() => {
     onAlertReceivedRef.current = onAlertReceived;
   }, [onAlertReceived]);
+  useEffect(() => {
+    onResolveReceivedRef.current = onResolveReceived;
+  }, [onResolveReceived]);
 
   useEffect(() => {
     setStatus('connecting');
@@ -94,6 +102,20 @@ export function useSwarmSocket({ latitude, longitude, onAlertReceived }: UseSwar
             // Fallback: unencrypted relay (backwards compatibility)
             const legacyRelay = payload as { alert: AlertBroadcastPayload };
             onAlertReceivedRef.current(legacyRelay.alert);
+          }
+        } else if (payload.type === 'RESOLVE_RELAY') {
+          const relay = payload as ResolveRelayPayload;
+          const resolve = relay.resolve;
+
+          // Decrypt the resolve confirmation to verify authenticity
+          if (resolve.ciphertext && resolve.iv) {
+            try {
+              await decryptPayload(resolve.ciphertext, resolve.iv, COMMUNITY_SECRET);
+              // Decryption succeeded — this is a valid resolve from our neighborhood
+              onResolveReceivedRef.current(resolve.geohash, resolve.originSessionId);
+            } catch {
+              console.warn('🔒 Failed to decrypt RESOLVE — ignoring.');
+            }
           }
         }
       } catch (err) {
@@ -172,9 +194,43 @@ export function useSwarmSocket({ latitude, longitude, onAlertReceived }: UseSwar
     [latitude, longitude, sessionId, status],
   );
 
+  const resolveIncident = useCallback(
+    async () => {
+      const ws = socketRef.current;
+      if (
+        !ws ||
+        ws.readyState !== WebSocket.OPEN ||
+        status !== 'connected' ||
+        !sessionId ||
+        latitude === null ||
+        longitude === null
+      ) {
+        throw new Error('Swarm WebSocket is not connected or location is not established.');
+      }
+
+      const centerGeohash = encodeGeoHash(latitude, longitude, 6);
+
+      // Encrypt a confirmation message — the server only sees opaque ciphertext
+      const { ciphertext, iv } = await encryptPayload('INCIDENT_RESOLVED', COMMUNITY_SECRET);
+
+      const resolvePayload = {
+        type: 'RESOLVE' as const,
+        geohash: centerGeohash,
+        ciphertext,
+        iv,
+        timestamp: new Date().toISOString(),
+        originSessionId: sessionId,
+      };
+
+      ws.send(JSON.stringify(resolvePayload));
+    },
+    [latitude, longitude, sessionId, status],
+  );
+
   return {
     status,
     sessionId,
     broadcastAlert,
+    resolveIncident,
   };
 }

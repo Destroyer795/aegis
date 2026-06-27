@@ -134,6 +134,33 @@ export function startServer(port: number): WebSocketServer {
             break;
           }
 
+          case 'RESOLVE': {
+            const { geohash } = payload;
+            const subscribers = geohashSubscriptions.get(geohash);
+
+            // Fan out the RESOLVE to all subscribers of this GeoHash cell
+            if (subscribers) {
+              const relayPayload = {
+                type: 'RESOLVE_RELAY' as const,
+                resolve: payload,
+                relayedTo: [geohash],
+              };
+              const rawPayload = JSON.stringify(relayPayload);
+
+              for (const subSessionId of subscribers) {
+                if (subSessionId !== sessionId) {
+                  const subscriberWs = activeConnections.get(subSessionId);
+                  if (subscriberWs && subscriberWs.readyState === WebSocket.OPEN) {
+                    subscriberWs.send(rawPayload);
+                  }
+                }
+              }
+            }
+
+            ws.send(JSON.stringify({ type: 'RESOLVE_ACK', timestamp: new Date().toISOString() }));
+            break;
+          }
+
           default:
             ws.send(JSON.stringify({ type: 'ERROR', message: 'Unsupported message type' }));
         }
