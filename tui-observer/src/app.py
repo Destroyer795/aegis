@@ -40,12 +40,7 @@ Screen {
     padding: 1;
 }
 
-#left-panel-container {
-    border-title: "🛡️ LIVE NETWORK TRAFFIC";
-}
-
 #right-panel-container {
-    border-title: "🗺️ SWARM GEOGRID (500M PRECISION)";
     align: center middle;
 }
 
@@ -53,7 +48,6 @@ Log {
     background: #030712;
     border: solid #1f2937;
     color: #10b981;
-    font-family: "Courier New", monospace;
 }
 
 #grid-container {
@@ -69,8 +63,7 @@ Log {
     border: solid #374151;
     content-align: center middle;
     color: #9ca3af;
-    text-align: center;
-    font-weight: bold;
+    text-style: bold;
 }
 
 .grid-cell.center-cell {
@@ -125,6 +118,8 @@ class AegisTuiApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
+        self.query_one("#left-panel-container").border_title = "🛡️ LIVE NETWORK TRAFFIC"
+        self.query_one("#right-panel-container").border_title = "🗺️ SWARM GEOGRID (500M PRECISION)"
         self.log_widget = self.query_one(Log)
         self.log_widget.write_line("🛡️ Aegis swarm observer TUI initialized.")
         self.websocket_worker()
