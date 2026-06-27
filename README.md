@@ -45,8 +45,8 @@ During neighborhood micro-emergencies — gas leaks, severe hazards, lost childr
 │  └───────────────────┘       └─────────────────────────┘       └─────────────────────┘  │
 │            │                              │                               │             │
 │            ▼                              ▼                               ▼             │
-│   🔒 Raw Lat/Lng NEVER          Opaque GeoHash Keys             Ciphertext + IV         │
-│      leaves the device         ["9q8yyk", "9q8yym"...]          Hex Strings Only        │
+│     Raw Lat/Lng NEVER            Opaque GeoHash Keys             Ciphertext + IV        │
+│     leaves the device          ["9q8yyk", "9q8yym"...]           Hex Strings Only       │
 │                                           │                               │             │
 └───────────────────────────────────────────┼───────────────────────────────┼─────────────┘
                                             │                               │
