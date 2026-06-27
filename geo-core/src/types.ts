@@ -101,6 +101,40 @@ export interface RTCSignalData {
   readonly payload: string;
 }
 
+// ─── Encrypted Alert Payloads ───────────────────────────────────────
+
+/**
+ * An encrypted alert broadcast sent over the wire.
+ * The `message` field is replaced with `ciphertext` + `iv` —
+ * the edge router sees only opaque hex strings, never plaintext.
+ */
+export interface EncryptedAlertBroadcastPayload {
+  readonly type: 'ALERT';
+  /** The GeoHash cell this alert originates from. */
+  readonly geohash: GeoHashString;
+  /** Alert severity level. */
+  readonly severity: AlertSeverity;
+  /** AES-GCM encrypted message (hex-encoded). */
+  readonly ciphertext: string;
+  /** AES-GCM initialization vector (hex-encoded). */
+  readonly iv: string;
+  /** ISO 8601 timestamp of alert creation. */
+  readonly timestamp: string;
+  /** Ephemeral session ID of the alerting peer (for WebRTC handoff). */
+  readonly originSessionId: SessionId;
+}
+
+/**
+ * Server-side relay of an encrypted alert.
+ */
+export interface EncryptedAlertRelayPayload {
+  readonly type: 'ALERT_RELAY';
+  /** The encrypted alert payload. */
+  readonly alert: EncryptedAlertBroadcastPayload;
+  /** All GeoHash cells this alert was relayed to. */
+  readonly relayedTo: readonly GeoHashString[];
+}
+
 // ─── Aggregate Message Union ────────────────────────────────────────
 
 /** All possible messages flowing through the Aegis edge router. */
@@ -109,6 +143,8 @@ export type AegisMessage =
   | GeoHashUnsubscribePayload
   | AlertBroadcastPayload
   | AlertRelayPayload
+  | EncryptedAlertBroadcastPayload
+  | EncryptedAlertRelayPayload
   | WebRTCSignalPayload;
 
 // ─── Observability (TUI) ───────────────────────────────────────────

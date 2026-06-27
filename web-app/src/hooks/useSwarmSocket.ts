@@ -2,11 +2,24 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   createSubscriptionPayloadFromCoords,
   encodeGeoHash,
+  encryptPayload,
+  decryptPayload,
   AlertSeverity,
 } from '@aegis/geo-core';
-import type { AlertBroadcastPayload, AlertRelayPayload } from '@aegis/geo-core';
+import type {
+  AlertBroadcastPayload,
+  EncryptedAlertRelayPayload,
+} from '@aegis/geo-core';
 
 export type SocketStatus = 'connecting' | 'connected' | 'disconnected';
+
+/**
+ * Default community passphrase for encryption.
+ * In production, this would be a per-neighborhood secret distributed
+ * via a secure onboarding channel. For the hackathon demo, we use
+ * a hardcoded passphrase to demonstrate the zero-knowledge architecture.
+ */
+const COMMUNITY_SECRET = 'aegis-demo-neighborhood-key-2024';
 
 export interface UseSwarmSocketProps {
   latitude: number | null;
@@ -15,7 +28,13 @@ export interface UseSwarmSocketProps {
 }
 
 /**
- * Custom hook to manage the WebSocket lifecycle and coordinates subscription.
+ * Custom hook to manage the WebSocket lifecycle, coordinates subscription,
+ * and AES-GCM 256-bit end-to-end encryption of alert payloads.
+ *
+ * - Outgoing ALERTs: plaintext message → encryptPayload() → ciphertext+iv sent to server
+ * - Incoming ALERT_RELAYs: ciphertext+iv received → decryptPayload() → plaintext alert
+ *
+ * The edge-router NEVER sees plaintext alert messages.
  */
 export function useSwarmSocket({ latitude, longitude, onAlertReceived }: UseSwarmSocketProps) {
   const [status, setStatus] = useState<SocketStatus>('disconnected');
@@ -31,15 +50,47 @@ export function useSwarmSocket({ latitude, longitude, onAlertReceived }: UseSwar
       setStatus('connected');
     };
 
-    ws.onmessage = (event) => {
+    ws.onmessage = async (event) => {
       try {
         const payload = JSON.parse(event.data);
 
         if (payload.type === 'WELCOME') {
           setSessionId(payload.sessionId);
         } else if (payload.type === 'ALERT_RELAY') {
-          const relay = payload as AlertRelayPayload;
-          onAlertReceived(relay.alert);
+          const relay = payload as EncryptedAlertRelayPayload;
+          const encAlert = relay.alert;
+
+          // Decrypt the ciphertext back to the original plaintext message
+          if (encAlert.ciphertext && encAlert.iv) {
+            try {
+              const decryptedMessage = await decryptPayload(
+                encAlert.ciphertext,
+                encAlert.iv,
+                COMMUNITY_SECRET,
+              );
+
+              // Reconstruct a clean AlertBroadcastPayload with the decrypted message
+              const decryptedAlert: AlertBroadcastPayload = {
+                type: 'ALERT',
+                geohash: encAlert.geohash,
+                severity: encAlert.severity,
+                message: decryptedMessage,
+                timestamp: encAlert.timestamp,
+                originSessionId: encAlert.originSessionId,
+              };
+
+              onAlertReceived(decryptedAlert);
+            } catch (decryptErr) {
+              console.warn(
+                '🔒 Failed to decrypt alert — likely from a different neighborhood key:',
+                decryptErr,
+              );
+            }
+          } else {
+            // Fallback: unencrypted relay (backwards compatibility)
+            const legacyRelay = payload as { alert: AlertBroadcastPayload };
+            onAlertReceived(legacyRelay.alert);
+          }
         }
       } catch (err) {
         console.error('Error handling WebSocket message:', err);
@@ -76,7 +127,7 @@ export function useSwarmSocket({ latitude, longitude, onAlertReceived }: UseSwar
   }, [latitude, longitude, sessionId, status]);
 
   const broadcastAlert = useCallback(
-    (message: string, severity: AlertSeverity = AlertSeverity.CRITICAL) => {
+    async (message: string, severity: AlertSeverity = AlertSeverity.CRITICAL) => {
       const ws = socketRef.current;
       if (!ws || status !== 'connected' || !sessionId || latitude === null || longitude === null) {
         throw new Error('Swarm WebSocket is not connected or location is not established.');
@@ -84,18 +135,23 @@ export function useSwarmSocket({ latitude, longitude, onAlertReceived }: UseSwar
 
       const centerGeohash = encodeGeoHash(latitude, longitude, 6);
 
-      const alertPayload: AlertBroadcastPayload = {
-        type: 'ALERT',
+      // Encrypt the plaintext message before transmission
+      const { ciphertext, iv } = await encryptPayload(message, COMMUNITY_SECRET);
+
+      // Construct the encrypted alert payload — no plaintext leaves the device
+      const encryptedAlertPayload = {
+        type: 'ALERT' as const,
         geohash: centerGeohash,
         severity,
-        message,
+        ciphertext,
+        iv,
         timestamp: new Date().toISOString(),
         originSessionId: sessionId,
       };
 
-      ws.send(JSON.stringify(alertPayload));
+      ws.send(JSON.stringify(encryptedAlertPayload));
     },
-    [latitude, longitude, sessionId, status]
+    [latitude, longitude, sessionId, status],
   );
 
   return {

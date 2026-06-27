@@ -4,7 +4,6 @@ import type {
   AegisMessage,
   GeoHashString,
   SessionId,
-  AlertRelayPayload,
 } from '@aegis/geo-core';
 
 // In-memory Pub/Sub and Connection State
@@ -93,8 +92,10 @@ export function startServer(port: number): WebSocketServer {
 
             // Relay the alert to all other subscribers of this GeoHash cell
             if (subscribers) {
-              const relayPayload: AlertRelayPayload = {
-                type: 'ALERT_RELAY',
+              // The router is encryption-agnostic: it wraps the opaque payload
+              // in a relay envelope without inspecting the message contents.
+              const relayPayload = {
+                type: 'ALERT_RELAY' as const,
                 alert: payload,
                 relayedTo: [geohash],
               };

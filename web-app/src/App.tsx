@@ -38,12 +38,12 @@ export default function App() {
   const [mockLatInput, setMockLatInput] = useState('37.7749');
   const [mockLngInput, setMockLngInput] = useState('-122.4194');
 
-  const handleBroadcast = (e: React.FormEvent) => {
+  const handleBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!alertMessage.trim()) return;
 
     try {
-      socket.broadcastAlert(alertMessage, severity);
+      await socket.broadcastAlert(alertMessage, severity);
       setAlertMessage('');
     } catch (err: any) {
       alert(err.message || 'Failed to send alert');
