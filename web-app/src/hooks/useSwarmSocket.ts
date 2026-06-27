@@ -40,6 +40,10 @@ export function useSwarmSocket({ latitude, longitude, onAlertReceived }: UseSwar
   const [status, setStatus] = useState<SocketStatus>('disconnected');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  const onAlertReceivedRef = useRef(onAlertReceived);
+  useEffect(() => {
+    onAlertReceivedRef.current = onAlertReceived;
+  }, [onAlertReceived]);
 
   useEffect(() => {
     setStatus('connecting');
@@ -79,7 +83,7 @@ export function useSwarmSocket({ latitude, longitude, onAlertReceived }: UseSwar
                 originSessionId: encAlert.originSessionId,
               };
 
-              onAlertReceived(decryptedAlert);
+              onAlertReceivedRef.current(decryptedAlert);
             } catch (decryptErr) {
               console.warn(
                 '🔒 Failed to decrypt alert — likely from a different neighborhood key:',
@@ -89,7 +93,7 @@ export function useSwarmSocket({ latitude, longitude, onAlertReceived }: UseSwar
           } else {
             // Fallback: unencrypted relay (backwards compatibility)
             const legacyRelay = payload as { alert: AlertBroadcastPayload };
-            onAlertReceived(legacyRelay.alert);
+            onAlertReceivedRef.current(legacyRelay.alert);
           }
         }
       } catch (err) {
@@ -110,7 +114,7 @@ export function useSwarmSocket({ latitude, longitude, onAlertReceived }: UseSwar
       ws.close();
       socketRef.current = null;
     };
-  }, [onAlertReceived]);
+  }, []);
 
   // Synchronize GeoHash subscriptions when location or sessionId updates
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useGeolocation } from './hooks/useGeolocation';
 import { useSwarmSocket } from './hooks/useSwarmSocket';
 import { encodeGeoHash, AlertSeverity } from '@aegis/geo-core';
@@ -24,14 +24,15 @@ export default function App() {
       ? encodeGeoHash(geo.latitude, geo.longitude, 6)
       : null;
 
+  const handleAlertReceived = useCallback((alert: AlertBroadcastPayload) => {
+    setActiveAlert(alert);
+  }, []);
+
   // Hook 2: Swarm WebSocket Socket
   const socket = useSwarmSocket({
     latitude: geo.latitude,
     longitude: geo.longitude,
-    onAlertReceived: (alert) => {
-      // Trigger full-screen alerting modal
-      setActiveAlert(alert);
-    },
+    onAlertReceived: handleAlertReceived,
   });
 
   // Mock Form Lat/Lng inputs state
