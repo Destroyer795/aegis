@@ -115,7 +115,14 @@ export function useSwarmSocket({ latitude, longitude, onAlertReceived }: UseSwar
   // Synchronize GeoHash subscriptions when location or sessionId updates
   useEffect(() => {
     const ws = socketRef.current;
-    if (ws && status === 'connected' && sessionId && latitude !== null && longitude !== null) {
+    if (
+      ws &&
+      ws.readyState === WebSocket.OPEN &&
+      status === 'connected' &&
+      sessionId &&
+      latitude !== null &&
+      longitude !== null
+    ) {
       const subscribePayload = createSubscriptionPayloadFromCoords(
         latitude,
         longitude,
@@ -129,7 +136,14 @@ export function useSwarmSocket({ latitude, longitude, onAlertReceived }: UseSwar
   const broadcastAlert = useCallback(
     async (message: string, severity: AlertSeverity = AlertSeverity.CRITICAL) => {
       const ws = socketRef.current;
-      if (!ws || status !== 'connected' || !sessionId || latitude === null || longitude === null) {
+      if (
+        !ws ||
+        ws.readyState !== WebSocket.OPEN ||
+        status !== 'connected' ||
+        !sessionId ||
+        latitude === null ||
+        longitude === null
+      ) {
         throw new Error('Swarm WebSocket is not connected or location is not established.');
       }
 
